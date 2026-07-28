@@ -9,6 +9,7 @@ from .definitions import (
     OmadaSoftwareUpdateInfo,
 )
 from .devices import OmadaSwitchPortDetails
+from .networks import DhcpReservation
 from .omadaclient import OmadaClient, OmadaSite
 from .omadasiteclient import (
     AccessPointPortSettings,
@@ -23,6 +24,7 @@ from .vpn import OmadaVpnCategory, OmadaVpnPolicy, OmadaVpnType
 
 __all__ = [
     "AccessPointPortSettings",
+    "DhcpReservation",
     "GatewayPortSettings",
     "OmadaClient",
     "OmadaClientFixedAddress",
