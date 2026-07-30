@@ -12,6 +12,7 @@ from .devices import OmadaSwitchPortDetails
 from .omadaclient import OmadaClient, OmadaSite
 from .omadasiteclient import (
     AccessPointPortSettings,
+    AccessPointRadioSettings,
     GatewayPortSettings,
     OmadaClientFixedAddress,
     OmadaClientSettings,
@@ -23,6 +24,7 @@ from .vpn import OmadaVpnCategory, OmadaVpnPolicy, OmadaVpnType
 
 __all__ = [
     "AccessPointPortSettings",
+    "AccessPointRadioSettings",
     "GatewayPortSettings",
     "OmadaClient",
     "OmadaClientFixedAddress",
