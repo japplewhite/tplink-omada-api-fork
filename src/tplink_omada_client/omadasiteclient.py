@@ -919,31 +919,20 @@ class OmadaSiteClient:
             (await self._dhcp_url()) + "/" + mac.lower(),
         )
 
-    async def _networks_url(self) -> str:
-        """Return the LAN networks API URL for the current controller version.
-
-        UNVERIFIED: "setting/lan/networks" is inferred from this codebase's
-        naming convention for adjacent endpoints (setting/lan/profileSummary
-        for port profiles, setting/service/dhcp for DHCP) - it has not been
-        confirmed against a live controller. Expect to fix this path once
-        tested against real hardware.
-        """
-        if (await self._api.get_controller_version()) >= AwesomeVersion("6.2.0.0"):
-            return self._api.format_openapi_url("setting/lan/networks", site=self._site_id)
-        return self._api.format_url("setting/lan/networks", self._site_id)
-
     async def get_networks(self) -> list[LanNetwork]:
         """Get the LAN networks (VLANs) defined on this site.
 
-        UNVERIFIED against a live controller - see _networks_url(). Should
-        be safe to try (read-only), but don't build on top of this until
-        confirmed working end to end.
+        Verified 2026-08-27 against a live controller (firmware 6.2.14.12,
+        site with a single default network) - GET .../setting/lan/networks
+        with currentPage/currentPageSize query params, using the legacy
+        (non-OpenAPI) request signing this class already uses elsewhere.
+        The equivalent OpenAPI path was tried first and does not exist
+        under that name ("Unsupported request path") - unlike
+        get_port_profiles()/DHCP, this endpoint hasn't (yet?) been migrated
+        there, so no version-based branching is applied here.
         """
-        url = await self._networks_url()
-        if (await self._api.get_controller_version()) >= AwesomeVersion("6.2.0.0"):
-            return [LanNetwork(n) async for n in self._api.iterate_pages_openapi_get(url)]
-        result = await self._api.request("get", url)
-        return [LanNetwork(n) for n in result.get("data", result)]
+        url = self._api.format_url("setting/lan/networks", self._site_id)
+        return [LanNetwork(n) async for n in self._api.iterate_pages(url)]
 
     async def create_network(
         self, name: str, vlan_id: int, gateway_subnet: str | None = None,

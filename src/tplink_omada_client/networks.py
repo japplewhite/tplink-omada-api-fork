@@ -55,11 +55,12 @@ class DhcpReservation(OmadaApiData):
 class LanNetwork(OmadaApiData):
     """LAN network (VLAN) configuration.
 
-    NOTE: field names below are a best-effort guess based on this codebase's
-    conventions for adjacent objects (DhcpReservation's netId/netName, the
-    Omada Controller UI's "Wired Networks > LAN" terminology) and have NOT
-    been confirmed against a live controller response yet. Verify raw_data
-    against a real GET before trusting anything beyond raw_data itself.
+    Field names confirmed 2026-08-27 against a live controller (firmware
+    6.2.14.12) GET response for the site's default network - see
+    get_networks()'s docstring for the verified request shape. Not every
+    field the controller returns is modeled here yet (e.g. dhcpSettings is
+    a nested object, igmp/mld snooping, arp detection, ACL/isolation flags)
+    - add more as real use cases need them; raw_data has everything.
     """
 
     @property
@@ -74,18 +75,29 @@ class LanNetwork(OmadaApiData):
 
     @property
     def vlan_id(self) -> int | None:
-        """802.1Q VLAN ID, if tagged."""
-        return self._data.get("vlanId")
+        """802.1Q VLAN ID (controller field name is just "vlan")."""
+        return self._data.get("vlan")
 
     @property
-    def purpose(self) -> int | None:
-        """Network purpose/type code (e.g. LAN vs. other roles). Raw controller value - not yet mapped to an enum."""
+    def purpose(self) -> str | None:
+        """Network purpose (e.g. "interface" for a standard LAN network). String, not an enum code."""
         return self._data.get("purpose")
 
     @property
     def gateway_subnet(self) -> str | None:
-        """Gateway IP / subnet, if present (e.g. '192.168.20.1/24')."""
-        return self._data.get("gatewaySubnet") or self._data.get("subnet")
+        """Gateway IP / subnet, e.g. '192.168.20.1/24'."""
+        return self._data.get("gatewaySubnet")
+
+    @property
+    def dhcp_enabled(self) -> bool | None:
+        """Whether this network's own DHCP server is enabled (nested under dhcpSettings.enable)."""
+        dhcp = self._data.get("dhcpSettings")
+        return dhcp.get("enable") if dhcp else None
+
+    @property
+    def is_primary(self) -> bool | None:
+        """Whether this is the site's primary/default network."""
+        return self._data.get("primary")
 
 
 class LanProfile(OmadaApiData):
