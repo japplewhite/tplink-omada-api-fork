@@ -9,7 +9,7 @@ from .definitions import (
     OmadaSoftwareUpdateInfo,
 )
 from .devices import OmadaSwitchPortDetails
-from .networks import DhcpReservation
+from .networks import DhcpReservation, LanNetwork
 from .omadaclient import OmadaClient, OmadaSite
 from .omadasiteclient import (
     AccessPointPortSettings,
@@ -35,6 +35,7 @@ __all__ = [
     "OmadaControllerUpdateInfo",
     "OmadaHardwareUpdateInfo",
     "OmadaHardwareUpgradeStatus",
+    "LanNetwork",
     "OmadaSite",
     "OmadaSiteClient",
     "OmadaSoftwareUpdateInfo",

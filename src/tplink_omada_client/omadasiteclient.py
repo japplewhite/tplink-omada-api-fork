@@ -46,7 +46,7 @@ from .exceptions import (
     InvalidDevice,
     OmadaClientException,
 )
-from .networks import DhcpReservation
+from .networks import DhcpReservation, LanNetwork
 from .omadaapiconnection import OmadaApiConnection
 from .vpn import _VPN_LIST_ENDPOINTS, OmadaVpnCategory, OmadaVpnPolicy
 
@@ -917,4 +917,49 @@ class OmadaSiteClient:
         await self._api.request(
             "delete",
             (await self._dhcp_url()) + "/" + mac.lower(),
+        )
+
+    async def _networks_url(self) -> str:
+        """Return the LAN networks API URL for the current controller version.
+
+        UNVERIFIED: "setting/lan/networks" is inferred from this codebase's
+        naming convention for adjacent endpoints (setting/lan/profileSummary
+        for port profiles, setting/service/dhcp for DHCP) - it has not been
+        confirmed against a live controller. Expect to fix this path once
+        tested against real hardware.
+        """
+        if (await self._api.get_controller_version()) >= AwesomeVersion("6.2.0.0"):
+            return self._api.format_openapi_url("setting/lan/networks", site=self._site_id)
+        return self._api.format_url("setting/lan/networks", self._site_id)
+
+    async def get_networks(self) -> list[LanNetwork]:
+        """Get the LAN networks (VLANs) defined on this site.
+
+        UNVERIFIED against a live controller - see _networks_url(). Should
+        be safe to try (read-only), but don't build on top of this until
+        confirmed working end to end.
+        """
+        url = await self._networks_url()
+        if (await self._api.get_controller_version()) >= AwesomeVersion("6.2.0.0"):
+            return [LanNetwork(n) async for n in self._api.iterate_pages_openapi_get(url)]
+        result = await self._api.request("get", url)
+        return [LanNetwork(n) for n in result.get("data", result)]
+
+    async def create_network(
+        self, name: str, vlan_id: int, gateway_subnet: str | None = None,
+    ) -> LanNetwork:
+        """Create a new LAN network (VLAN) on this site.
+
+        NOT VERIFIED against a live controller - the request body shape
+        below is a placeholder based on the fields guessed in LanNetwork,
+        not a confirmed payload. Do not run this against a production
+        network until it has been tested (ideally by first capturing the
+        real request the Controller UI itself sends when creating a
+        network, via browser devtools) and this docstring updated to
+        remove this warning.
+        """
+        raise NotImplementedError(
+            "create_network() payload is unverified against a live controller - "
+            "capture the real UI request first (Settings > Wired Networks > LAN, "
+            "Create New Network) before implementing this for real."
         )
