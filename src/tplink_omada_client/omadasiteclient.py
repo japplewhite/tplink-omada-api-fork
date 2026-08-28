@@ -46,7 +46,7 @@ from .exceptions import (
     InvalidDevice,
     OmadaClientException,
 )
-from .networks import DhcpReservation, LanNetwork
+from .networks import DhcpReservation, LanNetwork, PortLabel
 from .omadaapiconnection import OmadaApiConnection
 from .vpn import _VPN_LIST_ENDPOINTS, OmadaVpnCategory, OmadaVpnPolicy
 
@@ -934,6 +934,39 @@ class OmadaSiteClient:
         url = self._api.format_url("setting/lan/networks", self._site_id)
         return [LanNetwork(n) async for n in self._api.iterate_pages(url)]
 
+    async def get_port_labels(self) -> list[PortLabel]:
+        """Get the port labels ("tags") defined on this site.
+
+        CORRECTED 2026-08-28: the legacy `.../tags` endpoint (used until
+        now) is a *different*, unrelated resource - it happens to also be
+        called "tags" and accepts the same {"name": ...} create body, but
+        objects created there are never referenced by switch ports and
+        their ids are rejected by networks/confirm's deviceConfig.tagIds
+        ("Some tag IDs do not exist.", -33837). Confirmed via a live
+        browser capture of the switch port editor's "Port Labels" dropdown:
+        it calls this OpenAPI endpoint, not the legacy one, and the id it
+        returns for a label ("foo") matched that label's tagIds value on
+        the actual port (GET .../switches/{mac}/ports/{port}) exactly.
+        Unpaginated, returns a plain list; each item's id field is named
+        "tagId", not "id" - see PortLabel.id.
+        """
+        url = self._api.format_openapi_url("switches/port-tag", site=self._site_id)
+        result = await self._api.request("get", url)
+        return [PortLabel(t) for t in result]
+
+    async def create_port_label(self, name: str) -> PortLabel:
+        """Create a new port label ("tag") on this site.
+
+        CORRECTED 2026-08-28 - see get_port_labels() docstring: this now
+        posts to the real OpenAPI switches/port-tag resource, not the
+        unrelated legacy .../tags endpoint. The id this returns (tagId) is
+        what deviceConfig.tagIds in create_network()/update_switch_port()
+        actually references.
+        """
+        url = self._api.format_openapi_url("switches/port-tag", site=self._site_id)
+        result = await self._api.request("post", url, json={"name": name})
+        return PortLabel(result)
+
     async def create_network(
         self,
         name: str,
@@ -942,6 +975,7 @@ class OmadaSiteClient:
         dhcp_enabled: bool = True,
         dhcp_start: str | None = None,
         dhcp_end: str | None = None,
+        tag_ids: list[str] | None = None,
     ) -> LanNetwork:
         """Create a new LAN network (VLAN) on this site.
 
@@ -977,6 +1011,16 @@ class OmadaSiteClient:
         fastLeaveEnable, portal, accessControlRule, rateLimit,
         interfaceIds. Fields it was missing: upnpLanEnable, dhcpns,
         leasetime, gatewayMode.
+
+        tag_ids: port label ("tag") IDs to apply, e.g. from
+        create_port_label()/get_port_labels() - populates
+        deviceConfig.tagIds. UNCONFIRMED whether this actually applies
+        the label to anything when deviceConfig.deviceList is empty (as
+        it always is here - this class applies networks to ports
+        separately, via update_switch_port's native_network_id, not
+        through this method's device-selection step). Verify the label
+        shows real member ports afterward via get_port_labels() before
+        relying on this.
         """
         gateway = await self.get_gateway()
 
@@ -1017,7 +1061,7 @@ class OmadaSiteClient:
                 "portIsolationEnable": False,
                 "flowControlEnable": False,
                 "deviceList": [],
-                "tagIds": [],
+                "tagIds": tag_ids or [],
             },
             "lanNetwork": lan_network,
         }

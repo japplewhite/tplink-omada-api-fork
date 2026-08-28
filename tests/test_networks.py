@@ -205,3 +205,77 @@ async def test_create_network_requires_dhcp_range_when_enabled():
 
     with pytest.raises(ValueError):
         await site_client.create_network(name="X", vlan_id=99, gateway_subnet="10.0.0.1/24")
+
+
+@pytest.mark.asyncio
+async def test_create_network_with_tag_ids():
+    """tag_ids populates deviceConfig.tagIds - verified against a real
+    controller that {"name": "foo"} creates a real port-label object,
+    though whether tagIds actually attaches a label to anything when
+    deviceList is empty (always the case here) is unconfirmed - this
+    test only proves the wiring sends what was asked for."""
+    api = MagicMock()
+    api.format_openapi_url = MagicMock(
+        side_effect=lambda path, site=None, version="v1": f"/openapi/v1/ctrl/sites/{site}/{path}"
+    )
+    api.format_url = MagicMock(side_effect=lambda path, site=None: f"/api/v2/sites/{site}/{path}")
+    api.request = AsyncMock(return_value={"networkIdList": ["net-new"]})
+
+    async def _fake_iterate_pages(url, params=None):
+        yield {"id": "net-new", "name": "X", "vlan": 99}
+
+    api.iterate_pages = _fake_iterate_pages
+    site_client = OmadaSiteClient("site-1", api)
+    site_client.get_gateway = AsyncMock(return_value=OmadaGateway({"mac": "AA-BB-CC-00-00-01"}))
+
+    await site_client.create_network(
+        name="X", vlan_id=99, gateway_subnet="10.0.0.1/24", dhcp_enabled=False, tag_ids=["tag-foo"]
+    )
+
+    body = api.request.await_args.kwargs["json"]
+    assert body["deviceConfig"]["tagIds"] == ["tag-foo"]
+
+
+@pytest.mark.asyncio
+async def test_get_port_labels():
+    """get_port_labels() reads the OpenAPI switches/port-tag resource -
+    NOT the legacy .../tags endpoint, which is an unrelated resource that
+    happens to share the name (verified live, 2026-08-28: see
+    PortLabel/get_port_labels() docstrings)."""
+    api = MagicMock()
+    api.format_openapi_url = MagicMock(
+        side_effect=lambda path, site=None, version="v1": f"/openapi/v1/ctrl/sites/{site}/{path}"
+    )
+    api.request = AsyncMock(return_value=[{"tagId": "tag-1", "name": "foo", "resource": 0}])
+    site_client = OmadaSiteClient("site-1", api)
+
+    result = await site_client.get_port_labels()
+
+    api.request.assert_awaited_once_with("get", "/openapi/v1/ctrl/sites/site-1/switches/port-tag")
+    assert len(result) == 1
+    assert result[0].id == "tag-1"
+    assert result[0].name == "foo"
+    assert result[0].resource == 0
+
+
+@pytest.mark.asyncio
+async def test_create_port_label():
+    """Payload confirmed against a live controller: POST
+    openapi/v1/{ctrl}/sites/{site}/switches/port-tag with just
+    {"name": ...} creates a real label ("foo") and returns its tagId -
+    the id create_network()'s tag_ids and update_switch_port() actually
+    accept (unlike the legacy .../tags endpoint's id, which is rejected)."""
+    api = MagicMock()
+    api.format_openapi_url = MagicMock(
+        side_effect=lambda path, site=None, version="v1": f"/openapi/v1/ctrl/sites/{site}/{path}"
+    )
+    api.request = AsyncMock(return_value={"tagId": "tag-1", "name": "foo", "resource": 0})
+    site_client = OmadaSiteClient("site-1", api)
+
+    result = await site_client.create_port_label("foo")
+
+    api.request.assert_awaited_once_with(
+        "post", "/openapi/v1/ctrl/sites/site-1/switches/port-tag", json={"name": "foo"}
+    )
+    assert result.id == "tag-1"
+    assert result.name == "foo"

@@ -9,7 +9,7 @@ from .definitions import (
     OmadaSoftwareUpdateInfo,
 )
 from .devices import OmadaSwitchPortDetails
-from .networks import DhcpReservation, LanNetwork
+from .networks import DhcpReservation, LanNetwork, PortLabel
 from .omadaclient import OmadaClient, OmadaSite
 from .omadasiteclient import (
     AccessPointPortSettings,
@@ -28,6 +28,7 @@ __all__ = [
     "AccessPointRadioSettings",
     "DhcpReservation",
     "GatewayPortSettings",
+    "LanNetwork",
     "OmadaClient",
     "OmadaClientFixedAddress",
     "OmadaClientSettings",
@@ -35,7 +36,6 @@ __all__ = [
     "OmadaControllerUpdateInfo",
     "OmadaHardwareUpdateInfo",
     "OmadaHardwareUpgradeStatus",
-    "LanNetwork",
     "OmadaSite",
     "OmadaSiteClient",
     "OmadaSoftwareUpdateInfo",
@@ -43,6 +43,7 @@ __all__ = [
     "OmadaVpnCategory",
     "OmadaVpnPolicy",
     "OmadaVpnType",
+    "PortLabel",
     "PortProfileOverrides",
     "SwitchPortSettings",
     "clients",

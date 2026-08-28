@@ -100,6 +100,39 @@ class LanNetwork(OmadaApiData):
         return self._data.get("primary")
 
 
+class PortLabel(OmadaApiData):
+    """A reusable, named label ("tag") that can be applied to switch ports.
+
+    CORRECTED 2026-08-28: confirmed against a live controller to be
+    GET/POST openapi/v1/{controllerId}/sites/{siteId}/switches/port-tag -
+    an OpenAPI endpoint, not the legacy site-scoped .../tags endpoint used
+    until now. That legacy endpoint happens to share the name "tags" and
+    accepts the same {"name": ...} create body, but is an unrelated
+    resource: ids created there are rejected by networks/confirm's
+    deviceConfig.tagIds ("Some tag IDs do not exist."). Verified by
+    capturing the switch port editor's "Port Labels" dropdown request and
+    matching its returned tagId against the tagIds value actually stored
+    on a live switch port.
+    """
+
+    @property
+    def id(self) -> str:
+        """Label ID - this is what deviceConfig.tagIds (create_network(),
+        update_switch_port()) actually references, not the name. The
+        controller's field name for this is "tagId", not "id"."""
+        return self._data["tagId"]
+
+    @property
+    def name(self) -> str | None:
+        """Label display name."""
+        return self._data.get("name")
+
+    @property
+    def resource(self) -> int | None:
+        """Controller-internal resource type code (observed value: 0). Meaning unconfirmed."""
+        return self._data.get("resource")
+
+
 class LanProfile(OmadaApiData):
     """LAN port profile (VLAN profile for switch ports)."""
 
