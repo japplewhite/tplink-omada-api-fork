@@ -939,113 +939,97 @@ class OmadaSiteClient:
         name: str,
         vlan_id: int,
         gateway_subnet: str,
-        interface_ids: list[str],
         dhcp_enabled: bool = True,
         dhcp_start: str | None = None,
         dhcp_end: str | None = None,
     ) -> LanNetwork:
         """Create a new LAN network (VLAN) on this site.
 
-        SUPERSEDED FINDING, 2026-08-27: this method posts to the legacy
-        `setting/lan/networks` endpoint (same one get_networks() reads
-        from), following this class's usual legacy/OpenAPI dual pattern.
-        That's wrong for writes. Captured live via a real Controller UI
-        session (network devtools, Chrome, browser-automated): creating a
-        network for real does NOT call that endpoint at all. It drives a
-        multi-step flow entirely on the *official* Omada OpenAPI, all
-        under `openapi/v1/{controllerId}/sites/{siteId}/networks/`:
+        CONFIRMED against a real captured request, 2026-08-27: network
+        creation goes through the official OpenAPI's multi-step flow
+        (openapi/v1/{controllerId}/sites/{siteId}/networks/param-check,
+        auto-effect-devices, check, devices/ports, ... culminating in
+        POST networks/confirm, the actual commit) - NOT the legacy
+        setting/lan/networks endpoint get_networks() reads from, despite
+        this class's usual dual legacy/OpenAPI pattern. This method calls
+        only networks/confirm directly; the other steps appeared to be
+        UI-only interactive validation/port-picker support, not
+        server-side prerequisites - confirmed by creating three real
+        networks this way (Surveillance/30, Business LAN/20 via the UI
+        for the first two; Guest Wifi/40 was the first one actually
+        captured with its request body intact, via injected fetch/XHR
+        interception in a real browser session rather than a HAR export,
+        which failed twice - HAR exports don't reliably capture request
+        bodies across page navigations in this controller's SPA).
 
-            POST networks/param-check          (validate name/vlan/subnet/dhcp)
-            POST networks/auto-effect-devices   (which devices are affected)
-            POST networks/devices/ports         (available ports per device)
-            POST networks/ports-check           (validate port selection)
-            POST networks/check                 (final full-payload check)
-            POST networks/confirm               (the actual commit)
-          then reads back via GET networks/{id}, GET lan-networks/{id}, etc.
-
-        Request *bodies* for these were not recovered - the browser tooling
-        available (read_network_requests) exposes URL/method/status only,
-        not payloads, and two HAR-export attempts failed (one lost the log
-        to a page navigation, one exported empty). What follows below is
-        this method's OLD implementation, still targeting the wrong
-        (legacy) endpoint - left in place as a record of what was tried,
-        not because it's expected to work. Do not trust it.
-
-        Practical path used instead for now: driving the real Controller
-        UI through browser automation (Chrome, via a browser-control MCP)
-        to fill out and submit the "Add LAN" wizard - confirmed working
-        for two real networks (Surveillance/VLAN 30, Business LAN/VLAN 20)
-        this same session. That's a legitimate way to create networks
-        programmatically today; it just isn't a clean REST call an Ansible
-        module can make directly. Properly implementing create_network()
-        needs one more capture attempt with the request bodies actually
-        intact (e.g. Chrome DevTools Protocol Network.getResponseBody
-        equivalent, or a HAR export where Preserve Log genuinely holds
-        through the confirm step), or a look at TP-Link's own OpenAPI
-        Swagger docs for the /networks/confirm schema if that page can be
-        reached (it renders client-side JS; wasn't reachable via WebFetch
-        in this session).
-
-        --- Below: the old best-effort body for the WRONG (legacy) endpoint ---
-
-        interface_ids: the gateway LAN trunk interface IDs this network
-        rides on (tagged) - in practice this is the SAME list as an
-        existing network's interfaceIds (e.g. get_networks()[0].raw_data
-        ["interfaceIds"]), since Omada gateways trunk all VLANs over the
-        same physical LAN ports rather than binding a VLAN to a distinct
-        port. CONFIRMED correct in principle (a real created network
-        reuses this list verbatim) - but that finding is about a network's
-        *read* shape, not proof the legacy write endpoint itself works.
-
-        Payload shape below was refined against a series of live, clean
-        errors ("Invalid request parameters", missing igmpSnoopEnable,
-        "LAN interfaces could not be none", missing proto) from repeated
-        attempts against the legacy endpoint - none of which ever
-        partially created anything - but it ultimately hit the wrong
-        endpoint family entirely per the finding above, and was never
-        confirmed to fully succeed. Fields present only as
-        controller-computed output on read (id, site, deviceType,
-        deviceMac, state, totalIpNum, dhcpServerNum, subnetOverride*,
-        interface, primary, origName, resource, the various exist* flags)
-        were deliberately excluded from what's sent below.
+        The real request body is nothing like this method's earlier
+        guesses. It wraps everything in two objects - `deviceConfig`
+        (port bindings; empty here, ports are applied separately via
+        update_switch_port's native_network_id) and `lanNetwork` (the
+        network itself) - and identifies the owning device by a single
+        `deviceMac` (the site's gateway), not by an `interfaceIds` list.
+        interfaceIds turns out to be server-computed output visible on
+        GET, not something the client sends - reusing it from an existing
+        network (this method's previous approach) was never going to
+        work. DHCP range is nested under dhcpSettings.ipRangePool, not
+        flat ipaddrStart/ipaddrEnd. Fields this method's earlier attempts
+        invented that the real request never sends: purpose,
+        fastLeaveEnable, portal, accessControlRule, rateLimit,
+        interfaceIds. Fields it was missing: upnpLanEnable, dhcpns,
+        leasetime, gatewayMode.
         """
-        body: dict[str, object] = {
+        gateway = await self.get_gateway()
+
+        lan_network: dict[str, object] = {
             "name": name,
-            "vlan": vlan_id,
-            "purpose": "interface",
-            "gatewaySubnet": gateway_subnet,
-            "interfaceIds": interface_ids,
+            "deviceMac": gateway.mac,
+            "deviceType": 1,
             "vlanType": 0,
-            "application": 0,
-            "isolation": False,
-            # Feature toggles the controller requires non-null, matching the
-            # values observed on the site's existing networks - all off by
-            # default; not yet exposed as create_network() parameters since
-            # nothing has needed them turned on.
+            "vlan": vlan_id,
+            "gatewaySubnet": gateway_subnet,
+            "upnpLanEnable": False,
             "igmpSnoopEnable": False,
-            "fastLeaveEnable": False,
-            "mldSnoopEnable": False,
-            "dhcpL2RelayEnable": False,
-            "portal": False,
-            "accessControlRule": False,
-            "rateLimit": False,
-            "arpDetectionEnable": False,
-            "qosQueueEnable": False,
-            "dhcpv6Guard": {"enable": False},
             "dhcpGuard": {"enable": False},
-            "lanNetworkIpv6Config": {"enable": 0, "proto": "disabled"},
+            "dhcpv6Guard": {"enable": False},
+            "lanNetworkIpv6Config": {"proto": 0, "enable": 0},
+            "qosQueueEnable": False,
+            "isolation": False,
+            "mldSnoopEnable": False,
+            "arpDetectionEnable": False,
+            "dhcpL2RelayEnable": False,
         }
         if dhcp_enabled:
             if not dhcp_start or not dhcp_end:
                 raise ValueError("dhcp_start and dhcp_end are required when dhcp_enabled is True")
-            body["dhcpSettings"] = {
+            lan_network["dhcpSettings"] = {
                 "enable": True,
-                "ipaddrStart": dhcp_start,
-                "ipaddrEnd": dhcp_end,
+                "ipRangePool": [{"ipaddrStart": dhcp_start, "ipaddrEnd": dhcp_end}],
+                "dhcpns": "auto",
+                "leasetime": 120,
+                "gatewayMode": "auto",
+                "options": [],
             }
         else:
-            body["dhcpSettings"] = {"enable": False}
+            lan_network["dhcpSettings"] = {"enable": False}
 
-        url = self._api.format_url("setting/lan/networks", self._site_id)
+        body = {
+            "deviceConfig": {
+                "portIsolationEnable": False,
+                "flowControlEnable": False,
+                "deviceList": [],
+                "tagIds": [],
+            },
+            "lanNetwork": lan_network,
+        }
+
+        url = self._api.format_openapi_url("networks/confirm", site=self._site_id)
         result = await self._api.request("post", url, json=body)
-        return LanNetwork(result)
+        # confirm's response is just {"networkIdList": [...]}, not the full
+        # created object (confirmed live, 2026-08-27) - fetch the real one.
+        new_id = result["networkIdList"][0]
+        for network in await self.get_networks():
+            if network.id == new_id:
+                return network
+        raise OmadaClientException(
+            f"Network {new_id} was created but not found in get_networks() afterward"
+        )
