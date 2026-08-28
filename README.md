@@ -1,3 +1,48 @@
+# tplink-omada-client (fork)
+
+This is a fork of
+[MarkGodwin/tplink-omada-api](https://github.com/MarkGodwin/tplink-omada-api),
+maintained for use by the
+[`applewhiteit.omada`](https://github.com/japplewhite/ansible-collection-omada)
+Ansible collection. It exists because that collection needed LAN network
+(VLAN) and port-label support that isn't in any released version of the
+upstream library yet.
+
+## What's different from upstream
+
+- **LAN network/VLAN support** (new here): `get_networks()` and
+  `create_network()` — read existing VLANs and create new ones, including a
+  DHCP range and port labels. `create_network()` goes through TP-Link's
+  official OpenAPI (`networks/confirm`), a different endpoint than the
+  legacy one `get_networks()` reads from — both verified against a live
+  controller.
+- **Port label support** (new here): `get_port_labels()` and
+  `create_port_label()` — read/create the labels ("tags") a switch port can
+  be tagged with (`openapi/.../switches/port-tag`, not the legacy `/tags`
+  endpoint of the same name, which is a different, unrelated resource) —
+  plus a `tag_ids` option on `SwitchPortSettings` to apply them to a port.
+- **DHCP reservation management** — merged in from upstream
+  [PR #88](https://github.com/MarkGodwin/tplink-omada-api/pull/88), not yet
+  released upstream at the time this fork was branched.
+- **AP radio settings** — merged in from upstream
+  [PR #90](https://github.com/MarkGodwin/tplink-omada-api/pull/90)
+  (`get_access_point_channels()`, `set_access_point_radio_settings()`), also
+  not yet released upstream at the time this fork was branched.
+
+Everything else — login, sites, devices, switch port config, PoE, firmware,
+gateway/WAN status, clients — is unchanged from upstream
+`tplink-omada-client`.
+
+We've raised the network/VLAN gap directly with the upstream maintainer
+([PR #86](https://github.com/MarkGodwin/tplink-omada-api/pull/86)) with an
+eye toward contributing this back; until/unless that lands, this fork is
+what the collection depends on, pinned to tag `v1.5.9-fork.1`.
+
+Everything below this point is the original upstream README, describing the
+base library this fork builds on.
+
+---
+
 # What's this?
 
 A basic Python client for calling the TP-Link Omada controller API.
