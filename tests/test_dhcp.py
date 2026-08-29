@@ -93,6 +93,41 @@ async def test_update_dhcp_reservation_partial(site_client):
 
 
 @pytest.mark.asyncio
+async def test_update_dhcp_reservation_net_id_moves_network(site_client):
+    """update_dhcp_reservation's net_id sends netId, moving the reservation
+    to a different LAN network - matches the live Controller UI's Edit
+    DHCP Reservation dialog, which shows Network as an editable field on
+    the same form as IP/MAC/Name/Description/Status."""
+    site_client._api.request = AsyncMock(return_value={
+        "id": "1", "mac": "AA-BB-CC-11-22-33", "ip": "192.168.10.10",
+        "description": "OC200 controller", "status": True, "netId": "net-mgmt",
+    })
+    r = await site_client.update_dhcp_reservation(
+        "AA-BB-CC-11-22-33",
+        ip="192.168.10.10",
+        net_id="net-mgmt",
+    )
+    assert r.net_id == "net-mgmt"
+    _args, kwargs = site_client._api.request.call_args
+    assert kwargs["json"]["netId"] == "net-mgmt"
+    assert kwargs["json"]["ip"] == "192.168.10.10"
+
+
+@pytest.mark.asyncio
+async def test_update_dhcp_reservation_without_net_id_omits_it(site_client):
+    """net_id is optional - omitting it must not send netId at all, so a
+    plain IP/description/status update doesn't accidentally move the
+    reservation's network."""
+    site_client._api.request = AsyncMock(return_value={
+        "id": "1", "mac": "AA-BB-CC-11-22-33", "ip": "10.0.0.99",
+        "description": "just-ip", "status": True, "netId": "net-1",
+    })
+    await site_client.update_dhcp_reservation("AA-BB-CC-11-22-33", ip="10.0.0.99")
+    _args, kwargs = site_client._api.request.call_args
+    assert "netId" not in kwargs["json"]
+
+
+@pytest.mark.asyncio
 async def test_delete_dhcp_reservation(site_client):
     """delete_dhcp_reservation sends a DELETE request and returns None."""
     site_client._api.request = AsyncMock(return_value={})

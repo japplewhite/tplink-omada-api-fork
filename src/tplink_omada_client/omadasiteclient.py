@@ -896,9 +896,19 @@ class OmadaSiteClient:
 
     async def update_dhcp_reservation(
         self, mac: str, ip: str | None = None, description: str | None = None,
-        enabled: bool | None = None,
+        enabled: bool | None = None, net_id: str | None = None,
     ) -> DhcpReservation:
-        """Update an existing DHCP reservation identified by MAC."""
+        """Update an existing DHCP reservation identified by MAC.
+
+        net_id moves the reservation to a different LAN network - confirmed
+        against the live Controller UI's own "Edit DHCP Reservation" dialog,
+        which shows Network as a plain editable field (a dropdown) alongside
+        IP/MAC/Name/Description/Status on the same form, all submitted
+        together. Not yet exercised against a live controller from this
+        client - the UI's own equivalent PATCH shape is the basis for
+        sending it as "netId" here, matching create_dhcp_reservation()'s
+        field name for the same concept.
+        """
         body: dict[str, object] = {}
         if ip is not None:
             body["ip"] = ip
@@ -906,6 +916,8 @@ class OmadaSiteClient:
             body["description"] = description
         if enabled is not None:
             body["status"] = enabled
+        if net_id is not None:
+            body["netId"] = net_id
         result = await self._api.request(
             "patch",
             (await self._dhcp_url()) + "/" + mac.lower(),
